@@ -1,0 +1,19 @@
+
+# Dependencies
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor metadata
+.vscode
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# System files
+.DS_Store
+thumbs.db

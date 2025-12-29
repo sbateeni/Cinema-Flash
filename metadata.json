@@ -1,0 +1,7 @@
+{
+  "name": "سينما فلاش - Cinema Flash",
+  "description": "منصة شاملة للبحث وعرض الأفلام والمسلسلات مع خيارات تصفية متقدمة للمحتوى المترجم والمدبلج.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
