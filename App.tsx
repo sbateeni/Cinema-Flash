@@ -4,7 +4,7 @@ import Navbar from './components/Navbar';
 import MovieCard from './components/MovieCard';
 import MovieDetails from './components/MovieDetails';
 import { Movie, FilterLanguage, FilterType } from './types';
-import { searchMovies, getFeaturedMovies } from './services/geminiService';
+import { searchMovies, getFeaturedMovies, checkApiStatus } from './services/geminiService';
 import { getAllFromStore } from './services/dbService';
 
 type ViewType = 'home' | 'watchlist' | 'history';
@@ -15,12 +15,14 @@ const App: React.FC = () => {
   const [historyMovies, setHistoryMovies] = useState<Movie[]>([]);
   const [watchlistMovies, setWatchlistMovies] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [selectedMovie, setSelectedMovie] = useState<Movie | null>(null);
   
   const [currentView, setCurrentView] = useState<ViewType>('home');
   const [query, setQuery] = useState('');
   const [langFilter, setLangFilter] = useState<FilterLanguage>(FilterLanguage.ALL);
   const [typeFilter, setTypeFilter] = useState<FilterType>(FilterType.ALL);
+  const [isApiOnline, setIsApiOnline] = useState(false);
 
   const fetchUserData = useCallback(async () => {
     const history = await getAllFromStore('history');
@@ -31,12 +33,21 @@ const App: React.FC = () => {
 
   const fetchMovies = useCallback(async (q: string, lang: FilterLanguage, type: FilterType) => {
     setLoading(true);
+    setError(null);
     setCurrentView('home');
     try {
       const results = await searchMovies(q, lang, type);
       setMovies(results);
-    } catch (err) {
+      if (results.length === 0) setError("لم نجد نتائج مطابقة لبحثك.");
+    } catch (err: any) {
       console.error(err);
+      if (err.message === "API_KEY_MISSING") {
+        setError("خطأ: مفتاح API غير موجود في إعدادات Vercel.");
+      } else if (err.message === "RATE_LIMIT_EXCEEDED") {
+        setError("انتهت حصة الاستخدام المجانية لليوم، جرب لاحقاً.");
+      } else {
+        setError("حدث خطأ أثناء الاتصال بـ Gemini AI. تأكد من إعدادات المفتاح.");
+      }
     } finally {
       setLoading(false);
     }
@@ -45,6 +56,9 @@ const App: React.FC = () => {
   useEffect(() => {
     const init = async () => {
       setLoading(true);
+      const online = checkApiStatus();
+      setIsApiOnline(online);
+      
       await fetchUserData();
       const featured = await getFeaturedMovies();
       setFeaturedMovies(featured);
@@ -62,7 +76,7 @@ const App: React.FC = () => {
   const handleFilterChange = (lang: FilterLanguage, type: FilterType) => {
     setLangFilter(lang);
     setTypeFilter(type);
-    if (currentView === 'home') {
+    if (currentView === 'home' && query) {
       fetchMovies(query, lang, type);
     }
   };
@@ -70,26 +84,15 @@ const App: React.FC = () => {
   const handleNavigate = (view: ViewType) => {
     setCurrentView(view);
     setQuery('');
+    setError(null);
     fetchUserData();
   };
 
   const renderContent = () => {
     let displayList: Movie[] = [];
-    let title = "أحدث الإضافات";
-    let iconColor = "bg-red-600";
-
-    if (currentView === 'home') {
-      displayList = movies;
-      title = query ? `نتائج البحث عن: ${query}` : "أحدث الإضافات";
-    } else if (currentView === 'watchlist') {
-      displayList = watchlistMovies;
-      title = "قائمة المشاهدة لاحقاً";
-      iconColor = "bg-yellow-500";
-    } else if (currentView === 'history') {
-      displayList = historyMovies;
-      title = "سجل المشاهدة";
-      iconColor = "bg-blue-600";
-    }
+    if (currentView === 'home') displayList = movies;
+    else if (currentView === 'watchlist') displayList = watchlistMovies;
+    else if (currentView === 'history') displayList = historyMovies;
 
     if (loading) {
       return (
@@ -97,6 +100,19 @@ const App: React.FC = () => {
           {[...Array(12)].map((_, i) => (
             <div key={i} className="bg-slate-800 aspect-[2/3] rounded-xl animate-pulse"></div>
           ))}
+        </div>
+      );
+    }
+
+    if (error) {
+      return (
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <div className="w-16 h-16 bg-red-600/20 text-red-500 rounded-full flex items-center justify-center mb-4">
+             <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+          </div>
+          <p className="text-white font-bold mb-2">{error}</p>
+          <p className="text-slate-500 text-sm mb-6 max-w-xs">تأكد من إضافة API_KEY بشكل صحيح في لوحة تحكم Vercel وإعادة عمل Deploy.</p>
+          <button onClick={() => window.location.reload()} className="px-6 py-2 bg-red-600 text-white rounded-full font-bold hover:bg-red-700 transition-colors">تحديث الصفحة</button>
         </div>
       );
     }
@@ -109,7 +125,7 @@ const App: React.FC = () => {
           </svg>
           <p className="text-xl">القائمة فارغة حالياً</p>
           {currentView !== 'home' && (
-            <button onClick={() => setCurrentView('home')} className="mt-4 text-red-500 hover:underline">استكشف الأفلام</button>
+            <button onClick={() => setCurrentView('home')} className="mt-4 text-red-500 hover:underline font-bold">استكشف الأفلام</button>
           )}
         </div>
       );
@@ -130,7 +146,7 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen pb-20">
-      <Navbar onSearch={handleSearch} onNavigate={handleNavigate} activeView={currentView} />
+      <Navbar onSearch={handleSearch} onNavigate={handleNavigate} activeView={currentView} isApiOnline={isApiOnline} />
       
       {/* Filters Bar */}
       <div className="bg-slate-800/50 border-b border-slate-800 py-4 px-4">
@@ -140,7 +156,7 @@ const App: React.FC = () => {
             <select 
               value={typeFilter}
               onChange={(e) => handleFilterChange(langFilter, e.target.value as FilterType)}
-              className="bg-slate-900 border border-slate-700 text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-red-600"
+              className="bg-slate-900 border border-slate-700 text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-red-600 cursor-pointer"
             >
               {Object.values(FilterType).map(v => <option key={v} value={v}>{v}</option>)}
             </select>
@@ -151,7 +167,7 @@ const App: React.FC = () => {
             <select 
               value={langFilter}
               onChange={(e) => handleFilterChange(e.target.value as FilterLanguage, typeFilter)}
-              className="bg-slate-900 border border-slate-700 text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-red-600"
+              className="bg-slate-900 border border-slate-700 text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-red-600 cursor-pointer"
             >
               {Object.values(FilterLanguage).map(v => <option key={v} value={v}>{v}</option>)}
             </select>
@@ -159,15 +175,14 @@ const App: React.FC = () => {
 
           <div className="flex-grow"></div>
           
-          <div className="text-xs text-slate-400">
+          <div className="text-xs text-slate-400 font-medium">
+            {!isApiOnline && <span className="text-red-500 ml-2">⚠️ لم يتم ضبط الـ API</span>}
             {currentView === 'home' ? 'تصفح المكتبة' : `قائمة ${currentView === 'watchlist' ? 'المفضلة' : 'السجل'}`}
           </div>
         </div>
       </div>
 
       <main className="max-w-7xl mx-auto px-4 mt-8">
-        
-        {/* Recently Watched Horizontal Strip on Home */}
         {currentView === 'home' && !query && historyMovies.length > 0 && (
           <div className="mb-12 animate-fadeIn">
             <div className="flex items-center justify-between mb-4">
@@ -187,7 +202,6 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* Dynamic Content Rendering */}
         <div className="mb-12">
           <div className="flex items-center justify-between mb-8">
             <h2 className="text-2xl font-black flex items-center gap-2">
@@ -199,7 +213,6 @@ const App: React.FC = () => {
           {renderContent()}
         </div>
 
-        {/* Featured Section */}
         {currentView === 'home' && !query && featuredMovies.length > 0 && (
           <div className="mt-20">
             <div className="flex items-center justify-between mb-8">
@@ -251,7 +264,7 @@ const App: React.FC = () => {
               <h2 className="text-xl font-bold">سينما فلاش</h2>
             </div>
             <p className="text-slate-500 text-sm leading-relaxed max-w-md">
-              منصة عربية رائدة تقدم لك أحدث الأفلام والمسلسلات بجودة عالية وبشكل مجاني تماماً.
+              منصة عربية رائدة تقدم لك أحدث الأفلام والمسلسلات بجودة عالية وبشكل مجاني تماماً باستخدام تقنيات الذكاء الاصطناعي.
             </p>
           </div>
           <div>
@@ -262,11 +275,9 @@ const App: React.FC = () => {
             </ul>
           </div>
           <div>
-            <h4 className="text-white font-bold mb-4">تابعنا</h4>
-            <div className="flex gap-4 text-xs font-bold">
-              <span>FACEBOOK</span>
-              <span>TWITTER</span>
-              <span>INSTAGRAM</span>
+            <h4 className="text-white font-bold mb-4">الدعم</h4>
+            <div className="flex gap-4 text-[10px] font-bold text-slate-600">
+              {isApiOnline ? <span className="text-green-600">API ACTIVE</span> : <span className="text-red-600">API ERROR</span>}
             </div>
           </div>
         </div>
