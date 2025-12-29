@@ -4,11 +4,12 @@ import React, { useState } from 'react';
 interface NavbarProps {
   onSearch: (query: string) => void;
   onNavigate: (view: 'home' | 'watchlist' | 'history') => void;
+  onStatusClick: () => void;
   activeView: string;
   isApiOnline: boolean;
 }
 
-const Navbar: React.FC<NavbarProps> = ({ onSearch, onNavigate, activeView, isApiOnline }) => {
+const Navbar: React.FC<NavbarProps> = ({ onSearch, onNavigate, onStatusClick, activeView, isApiOnline }) => {
   const [searchInput, setSearchInput] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -31,13 +32,17 @@ const Navbar: React.FC<NavbarProps> = ({ onSearch, onNavigate, activeView, isApi
             </h1>
           </div>
           
-          {/* API Status Indicator */}
-          <div className="flex items-center gap-1.5 bg-slate-800/50 px-2 py-1 rounded-full border border-slate-700">
+          {/* API Status Indicator - Clickable for details */}
+          <button 
+            onClick={onStatusClick}
+            className="flex items-center gap-1.5 bg-slate-800/50 hover:bg-slate-800 px-2 py-1 rounded-full border border-slate-700 transition-colors group"
+            title="اضغط لمعرفة حالة الاتصال"
+          >
             <span className={`w-2 h-2 rounded-full ${isApiOnline ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></span>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter group-hover:text-white">
               Gemini: {isApiOnline ? 'متصل' : 'عطل'}
             </span>
-          </div>
+          </button>
         </div>
 
         <form onSubmit={handleSubmit} className="relative w-full md:w-96">

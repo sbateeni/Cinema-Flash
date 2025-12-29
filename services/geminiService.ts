@@ -9,10 +9,36 @@ export const checkApiStatus = (): boolean => {
   return !!API_KEY && API_KEY.length > 10;
 };
 
+export const getApiDiagnostics = () => {
+  if (!API_KEY) {
+    return {
+      status: 'missing',
+      message: 'المفتاح غير موجود نهائياً في النظام.',
+      details: 'تأكد من إضافة API_KEY أو api في Vercel.'
+    };
+  }
+  
+  if (API_KEY.length < 10) {
+    return {
+      status: 'invalid_length',
+      message: 'المفتاح قصير جداً وغير صالح.',
+      details: `الطول الحالي: ${API_KEY.length} حرفاً فقط.`
+    };
+  }
+
+  // إظهار أول 4 حروف وآخر 3 حروف للأمان
+  const masked = API_KEY.substring(0, 4) + '...' + API_KEY.substring(API_KEY.length - 3);
+  return {
+    status: 'detected',
+    message: 'تم رصد المفتاح في الكود.',
+    details: `المفتاح يبدأ بـ: ${masked} (الطول: ${API_KEY.length} حرفاً).`
+  };
+};
+
 // وظيفة مساعدة لإنشاء مثيل AI عند الطلب لضمان الحصول على أحدث مفتاح
 const getAIInstance = () => {
-  if (!API_KEY) return null;
-  return new GoogleGenAI({ apiKey: API_KEY });
+  if (!checkApiStatus()) return null;
+  return new GoogleGenAI({ apiKey: API_KEY! });
 };
 
 export const searchMovies = async (query: string, language: FilterLanguage, type: FilterType): Promise<Movie[]> => {
@@ -21,7 +47,6 @@ export const searchMovies = async (query: string, language: FilterLanguage, type
     throw new Error("API_KEY_MISSING");
   }
 
-  // استخدام gemini-3-flash-preview لضمان السرعة والتوافق مع المفاتيح المجانية
   const model = "gemini-3-flash-preview";
   
   const prompt = `
@@ -29,8 +54,7 @@ export const searchMovies = async (query: string, language: FilterLanguage, type
     التصنيف المطلوب: "${type}"، حالة الترجمة: "${language}".
     أجب بتنسيق JSON فقط كقائمة من 10 عناصر.
     كل عنصر يحتوي على: id, title, originalTitle, year, rating, poster, type, languageStatus, genre, description, quality.
-    اجعل البيانات واقعية جداً وكأنك موقع أفلام عربي (مثل ايجي بست).
-    استخدم بوسترات حقيقية إذا أمكن أو روابط من picsum.
+    اجعل البيانات واقعية جداً وكأنك موقع أفلام عربي.
   `;
 
   try {

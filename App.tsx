@@ -4,7 +4,7 @@ import Navbar from './components/Navbar';
 import MovieCard from './components/MovieCard';
 import MovieDetails from './components/MovieDetails';
 import { Movie, FilterLanguage, FilterType } from './types';
-import { searchMovies, getFeaturedMovies, checkApiStatus } from './services/geminiService';
+import { searchMovies, getFeaturedMovies, checkApiStatus, getApiDiagnostics } from './services/geminiService';
 import { getAllFromStore } from './services/dbService';
 
 type ViewType = 'home' | 'watchlist' | 'history';
@@ -42,11 +42,11 @@ const App: React.FC = () => {
     } catch (err: any) {
       console.error(err);
       if (err.message === "API_KEY_MISSING") {
-        setError("خطأ: مفتاح API غير موجود في إعدادات Vercel.");
+        setError("خطأ: مفتاح API غير متاح في تطبيقك.");
       } else if (err.message === "RATE_LIMIT_EXCEEDED") {
         setError("انتهت حصة الاستخدام المجانية لليوم، جرب لاحقاً.");
       } else {
-        setError("حدث خطأ أثناء الاتصال بـ Gemini AI. تأكد من إعدادات المفتاح.");
+        setError("حدث خطأ في الاتصال بـ Gemini AI. اضغط على الزر الأحمر بالأعلى لتشخيص المشكلة.");
       }
     } finally {
       setLoading(false);
@@ -88,6 +88,22 @@ const App: React.FC = () => {
     fetchUserData();
   };
 
+  const handleShowDiagnostics = () => {
+    const diag = getApiDiagnostics();
+    const alertMessage = `
+🔍 حالة Gemini API:
+-------------------
+• النتيجة: ${diag.message}
+• التفاصيل: ${diag.details}
+
+💡 نصائح للحل:
+1. تأكد أنك كتبت اسم المتغير API_KEY في Vercel (أحرف كبيرة).
+2. تأكد من أنك قمت بعمل "Redeploy" للموقع بعد إضافة المتغير.
+3. تأكد أن المفتاح يبدأ بـ AIza...
+    `;
+    alert(alertMessage);
+  };
+
   const renderContent = () => {
     let displayList: Movie[] = [];
     if (currentView === 'home') displayList = movies;
@@ -111,8 +127,11 @@ const App: React.FC = () => {
              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
           </div>
           <p className="text-white font-bold mb-2">{error}</p>
-          <p className="text-slate-500 text-sm mb-6 max-w-xs">تأكد من إضافة API_KEY بشكل صحيح في لوحة تحكم Vercel وإعادة عمل Deploy.</p>
-          <button onClick={() => window.location.reload()} className="px-6 py-2 bg-red-600 text-white rounded-full font-bold hover:bg-red-700 transition-colors">تحديث الصفحة</button>
+          <p className="text-slate-500 text-sm mb-6 max-w-xs">تأكد من ضبط المتغيرات البيئية بشكل صحيح.</p>
+          <div className="flex gap-4">
+            <button onClick={handleShowDiagnostics} className="px-6 py-2 bg-slate-800 text-white rounded-full font-bold hover:bg-slate-700 transition-colors border border-slate-700">تشخيص العطل</button>
+            <button onClick={() => window.location.reload()} className="px-6 py-2 bg-red-600 text-white rounded-full font-bold hover:bg-red-700 transition-colors">تحديث الصفحة</button>
+          </div>
         </div>
       );
     }
@@ -124,9 +143,6 @@ const App: React.FC = () => {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
           </svg>
           <p className="text-xl">القائمة فارغة حالياً</p>
-          {currentView !== 'home' && (
-            <button onClick={() => setCurrentView('home')} className="mt-4 text-red-500 hover:underline font-bold">استكشف الأفلام</button>
-          )}
         </div>
       );
     }
@@ -146,7 +162,13 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen pb-20">
-      <Navbar onSearch={handleSearch} onNavigate={handleNavigate} activeView={currentView} isApiOnline={isApiOnline} />
+      <Navbar 
+        onSearch={handleSearch} 
+        onNavigate={handleNavigate} 
+        onStatusClick={handleShowDiagnostics}
+        activeView={currentView} 
+        isApiOnline={isApiOnline} 
+      />
       
       {/* Filters Bar */}
       <div className="bg-slate-800/50 border-b border-slate-800 py-4 px-4">
@@ -176,7 +198,7 @@ const App: React.FC = () => {
           <div className="flex-grow"></div>
           
           <div className="text-xs text-slate-400 font-medium">
-            {!isApiOnline && <span className="text-red-500 ml-2">⚠️ لم يتم ضبط الـ API</span>}
+            {!isApiOnline && <span className="text-red-500 ml-2">⚠️ اضغط على مؤشر الحالة للتشخيص</span>}
             {currentView === 'home' ? 'تصفح المكتبة' : `قائمة ${currentView === 'watchlist' ? 'المفضلة' : 'السجل'}`}
           </div>
         </div>
@@ -277,7 +299,9 @@ const App: React.FC = () => {
           <div>
             <h4 className="text-white font-bold mb-4">الدعم</h4>
             <div className="flex gap-4 text-[10px] font-bold text-slate-600">
-              {isApiOnline ? <span className="text-green-600">API ACTIVE</span> : <span className="text-red-600">API ERROR</span>}
+              <button onClick={handleShowDiagnostics} className={isApiOnline ? "text-green-600 underline" : "text-red-600 underline"}>
+                {isApiOnline ? "API ACTIVE" : "API ERROR (Diagnostics)"}
+              </button>
             </div>
           </div>
         </div>
