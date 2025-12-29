@@ -6,7 +6,8 @@ import { Movie, FilterLanguage, FilterType } from "../types";
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const searchMovies = async (query: string, language: FilterLanguage, type: FilterType): Promise<Movie[]> => {
-  const model = "gemini-3-flash-preview";
+  // Use gemini-3-pro-preview for complex tasks involving structured data and grounding
+  const model = "gemini-3-pro-preview";
   
   const prompt = `
     Search for movies or series matching the name: "${query}".
@@ -60,9 +61,19 @@ export const searchMovies = async (query: string, language: FilterLanguage, type
       }
     });
 
-    const results = JSON.parse(response.text || "[]");
+    let results: any[] = [];
+    try {
+      // Extract text and handle potential markdown or additional text from grounding
+      const text = response.text || "[]";
+      // Clean up the string to ensure it's valid JSON (removing potential markdown blocks)
+      const cleanJson = text.replace(/```json\n?|\n?```/g, "").trim();
+      results = JSON.parse(cleanJson);
+    } catch (parseError) {
+      console.error("Failed to parse JSON response:", parseError);
+      results = [];
+    }
     
-    // استخراج مصادر التوثيق (Grounding) إن وجدت
+    // استخراج مصادر التوثيق (Grounding) إن وجدت - MUST extract and list URLs as per guidelines
     const grounding = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
     const sourceUrls = grounding
       .filter((chunk: any) => chunk.web)
