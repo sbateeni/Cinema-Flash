@@ -2,59 +2,55 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Movie, FilterLanguage, FilterType } from "../types";
 
-// جلب المفتاح والتأكد من وجوده
 const API_KEY = process.env.API_KEY;
 
 export const checkApiStatus = (): boolean => {
   return !!API_KEY && API_KEY.length > 10;
 };
 
+// Add the missing getApiDiagnostics function to fix the import error in App.tsx
 export const getApiDiagnostics = () => {
-  if (!API_KEY) {
-    return {
-      status: 'missing',
-      message: 'المفتاح غير موجود نهائياً في النظام.',
-      details: 'تأكد من إضافة API_KEY أو api في Vercel.'
-    };
-  }
-  
-  if (API_KEY.length < 10) {
-    return {
-      status: 'invalid_length',
-      message: 'المفتاح قصير جداً وغير صالح.',
-      details: `الطول الحالي: ${API_KEY.length} حرفاً فقط.`
-    };
-  }
+  const hasKey = !!API_KEY;
+  const keyLength = API_KEY?.length || 0;
+  const isValidFormat = API_KEY?.startsWith("AIza");
 
-  // إظهار أول 4 حروف وآخر 3 حروف للأمان
-  const masked = API_KEY.substring(0, 4) + '...' + API_KEY.substring(API_KEY.length - 3);
-  return {
-    status: 'detected',
-    message: 'تم رصد المفتاح في الكود.',
-    details: `المفتاح يبدأ بـ: ${masked} (الطول: ${API_KEY.length} حرفاً).`
-  };
+  if (!hasKey) {
+    return { message: "مفتاح API مفقود", details: "لم يتم العثور على متغير البيئة API_KEY في إعدادات المشروع." };
+  }
+  if (!isValidFormat) {
+    return { message: "تنسيق المفتاح غير صحيح", details: "يجب أن يبدأ مفتاح Gemini بـ 'AIza'. يرجى التأكد من صحة المفتاح المستخدم." };
+  }
+  if (keyLength < 20) {
+    return { message: "المفتاح قصير جداً", details: "يبدو أن المفتاح غير مكتمل أو غير صحيح." };
+  }
+  return { message: "المفتاح يبدو سليماً من الناحية التقنية", details: "إذا استمرت المشكلة، يرجى التأكد من تفعيل Gemini API في Google AI Studio والتأكد من عدم تجاوز حصة الاستخدام." };
 };
 
-// وظيفة مساعدة لإنشاء مثيل AI عند الطلب لضمان الحصول على أحدث مفتاح
 const getAIInstance = () => {
   if (!checkApiStatus()) return null;
+  // Create a new instance right before use to ensure the latest API key is used
   return new GoogleGenAI({ apiKey: API_KEY! });
 };
 
 export const searchMovies = async (query: string, language: FilterLanguage, type: FilterType): Promise<Movie[]> => {
   const ai = getAIInstance();
-  if (!ai) {
-    throw new Error("API_KEY_MISSING");
-  }
+  if (!ai) throw new Error("API_KEY_MISSING");
 
   const model = "gemini-3-flash-preview";
   
+  // برومبت مكثف لاستخراج روابط المشاهدة النهائية فقط
   const prompt = `
-    ابحث عن أفلام أو مسلسلات تطابق الاسم: "${query}".
-    التصنيف المطلوب: "${type}"، حالة الترجمة: "${language}".
-    أجب بتنسيق JSON فقط كقائمة من 10 عناصر.
-    كل عنصر يحتوي على: id, title, originalTitle, year, rating, poster, type, languageStatus, genre, description, quality.
-    اجعل البيانات واقعية جداً وكأنك موقع أفلام عربي.
+    ACT AS: A Movie Link Scraper.
+    SEARCH: Find direct streaming pages for the movie: "${query}".
+    TARGET WEBSITES: (cimawbas.tv, mycima.io, akwam.net, egybest.run, faselhd.com, wecima.show, hi-cima.com).
+    CRITICAL RULES:
+    1. Extract the FULL URL of the page where the movie is played.
+    2. Look for patterns like /watch/, /video/, watch.php?vid=, /play/.
+    3. DO NOT return search result pages (e.g., google.com/search).
+    4. NO YouTube, NO trailers, NO news.
+    5. Language: ${language}.
+    
+    OUTPUT: Return a JSON array of movies with metadata and an array of extracted "sources" (the direct links).
   `;
 
   try {
@@ -62,6 +58,7 @@ export const searchMovies = async (query: string, language: FilterLanguage, type
       model: model,
       contents: prompt,
       config: {
+        tools: [{ googleSearch: {} }], // استخدام جوجل للبحث الفعلي
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.ARRAY,
@@ -86,25 +83,46 @@ export const searchMovies = async (query: string, language: FilterLanguage, type
       }
     });
 
-    const text = response.text || "[]";
-    const cleanJson = text.replace(/```json\n?|\n?```/g, "").trim();
-    const results = JSON.parse(cleanJson);
+    // اقتناص الروابط من Grounding Metadata التي يوفرها Gemini Search
+    const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+    const rawUrls = groundingChunks
+      .filter((chunk: any) => chunk.web && chunk.web.uri)
+      .map((chunk: any) => chunk.web.uri);
 
-    return results.map((movie: any) => ({
-      ...movie,
-      sources: ["https://www.google.com/search?q=" + encodeURIComponent(movie.originalTitle + " stream free")]
-    }));
-  } catch (error: any) {
-    console.error("Gemini API Error:", error);
-    if (error.message?.includes("429")) throw new Error("RATE_LIMIT_EXCEEDED");
-    if (error.message?.includes("403")) throw new Error("API_KEY_INVALID");
+    const movies = JSON.parse(response.text || "[]");
+
+    return movies.map((movie: any) => {
+      // فلترة وتدقيق الروابط لتكون خاصة بالفيلم المختار تحديداً
+      const movieSlug = movie.originalTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const relevantLinks = rawUrls.filter((url: string) => {
+        const u = url.toLowerCase();
+        // التحقق من أن الرابط يحتوي على كلمة من العنوان وأنها ليست صفحة بحث عامة
+        const isRelevant = u.includes(movieSlug) || movie.originalTitle.toLowerCase().split(' ').some(word => word.length > 3 && u.includes(word));
+        const isStream = u.includes('watch') || u.includes('video') || u.includes('.php') || u.includes('play') || u.includes('movie');
+        const isNotSocial = !u.includes('youtube') && !u.includes('facebook') && !u.includes('google');
+        
+        return isRelevant && isStream && isNotSocial;
+      });
+
+      // إزالة الروابط المكررة وترتيبها
+      const uniqueLinks = Array.from(new Set(relevantLinks));
+
+      return {
+        ...movie,
+        sources: uniqueLinks.length > 0 ? uniqueLinks : [
+          `https://www.google.com/search?q=مشاهدة+${encodeURIComponent(movie.title)}+مترجم+كامل+اون+لاين`
+        ]
+      };
+    });
+  } catch (error) {
+    console.error("Link Extraction Error:", error);
     throw error;
   }
 };
 
 export const getFeaturedMovies = async (): Promise<Movie[]> => {
   try {
-    return await searchMovies("أفلام تريند 2024", FilterLanguage.ALL, FilterType.ALL);
+    return await searchMovies("أفلام 2024 مترجمة", FilterLanguage.ALL, FilterType.ALL);
   } catch {
     return [];
   }
