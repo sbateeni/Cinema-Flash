@@ -2,7 +2,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Movie, FilterLanguage, FilterType } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
+// يتم جلب مفتاح API مباشرة من المتغير البيئي process.env.API_KEY
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const searchMovies = async (query: string, language: FilterLanguage, type: FilterType): Promise<Movie[]> => {
   const model = "gemini-3-flash-preview";
@@ -61,13 +62,13 @@ export const searchMovies = async (query: string, language: FilterLanguage, type
 
     const results = JSON.parse(response.text || "[]");
     
-    // Add external sources if available via grounding
+    // استخراج مصادر التوثيق (Grounding) إن وجدت
     const grounding = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
     const sourceUrls = grounding
       .filter((chunk: any) => chunk.web)
       .map((chunk: any) => chunk.web.uri);
 
-    return results.map((movie: Movie) => ({
+    return results.map((movie: any) => ({
       ...movie,
       sources: sourceUrls.length > 0 ? sourceUrls : ["https://www.google.com/search?q=" + encodeURIComponent(movie.originalTitle + " streaming")]
     }));
