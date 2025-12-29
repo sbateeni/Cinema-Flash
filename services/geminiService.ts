@@ -4,13 +4,19 @@ import { Movie, FilterLanguage, FilterType } from "../types";
 
 // جلب المفتاح والتأكد من وجوده
 const API_KEY = process.env.API_KEY;
-const ai = API_KEY ? new GoogleGenAI({ apiKey: API_KEY }) : null;
 
 export const checkApiStatus = (): boolean => {
   return !!API_KEY && API_KEY.length > 10;
 };
 
+// وظيفة مساعدة لإنشاء مثيل AI عند الطلب لضمان الحصول على أحدث مفتاح
+const getAIInstance = () => {
+  if (!API_KEY) return null;
+  return new GoogleGenAI({ apiKey: API_KEY });
+};
+
 export const searchMovies = async (query: string, language: FilterLanguage, type: FilterType): Promise<Movie[]> => {
+  const ai = getAIInstance();
   if (!ai) {
     throw new Error("API_KEY_MISSING");
   }
@@ -52,9 +58,7 @@ export const searchMovies = async (query: string, language: FilterLanguage, type
             },
             required: ["id", "title", "originalTitle", "year", "rating", "poster", "type", "languageStatus", "genre", "description", "quality"]
           }
-        },
-        // تقليل استخدام الأدوات لضمان عمل الحسابات المجانية دون قيود
-        thinkingConfig: { thinkingBudget: 0 }
+        }
       }
     });
 

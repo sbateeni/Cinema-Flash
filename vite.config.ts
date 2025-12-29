@@ -5,8 +5,8 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   define: {
-    // نستخدم JSON.stringify لضمان تمرير القيمة كـ string صحيح
-    'process.env.API_KEY': JSON.stringify(process.env.API_KEY || "")
+    // نتحقق من وجود المفتاح تحت مسمى API_KEY أو api لضمان عمل تطبيق المستخدم
+    'process.env.API_KEY': JSON.stringify(process.env.API_KEY || process.env.api || "")
   },
   server: {
     port: 3000
