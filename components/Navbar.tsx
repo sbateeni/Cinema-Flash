@@ -7,9 +7,10 @@ interface NavbarProps {
   onStatusClick: () => void;
   activeView: string;
   isApiOnline: boolean;
+  remainingRequests: number;
 }
 
-const Navbar: React.FC<NavbarProps> = ({ onSearch, onNavigate, onStatusClick, activeView, isApiOnline }) => {
+const Navbar: React.FC<NavbarProps> = ({ onSearch, onNavigate, onStatusClick, activeView, isApiOnline, remainingRequests }) => {
   const [searchInput, setSearchInput] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -17,6 +18,12 @@ const Navbar: React.FC<NavbarProps> = ({ onSearch, onNavigate, onStatusClick, ac
     if (searchInput.trim()) {
       onSearch(searchInput);
     }
+  };
+
+  const getQuotaColor = () => {
+    if (remainingRequests > 1000) return 'text-green-500 border-green-500/20 bg-green-500/5';
+    if (remainingRequests > 100) return 'text-amber-500 border-amber-500/20 bg-amber-500/5';
+    return 'text-red-500 border-red-500/20 bg-red-500/5';
   };
 
   return (
@@ -32,17 +39,27 @@ const Navbar: React.FC<NavbarProps> = ({ onSearch, onNavigate, onStatusClick, ac
             </h1>
           </div>
           
-          {/* API Status Indicator - Clickable for details */}
-          <button 
-            onClick={onStatusClick}
-            className="flex items-center gap-1.5 bg-slate-800/50 hover:bg-slate-800 px-2 py-1 rounded-full border border-slate-700 transition-colors group"
-            title="اضغط لمعرفة حالة الاتصال"
-          >
-            <span className={`w-2 h-2 rounded-full ${isApiOnline ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></span>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter group-hover:text-white">
-              Gemini: {isApiOnline ? 'متصل' : 'عطل'}
-            </span>
-          </button>
+          <div className="flex flex-col gap-1">
+            <button 
+              onClick={onStatusClick}
+              className="flex items-center gap-1.5 bg-slate-800/50 hover:bg-slate-800 px-2 py-0.5 rounded-full border border-slate-700 transition-colors group"
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${isApiOnline ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></span>
+              <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter group-hover:text-white">
+                Gemini: {isApiOnline ? 'متصل' : 'عطل'}
+              </span>
+            </button>
+            
+            {/* العداد التنازلي للطلبات */}
+            <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border transition-colors ${getQuotaColor()}`}>
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              <span className="text-[9px] font-black uppercase tracking-tighter">
+                المتبقي: {remainingRequests} طلب
+              </span>
+            </div>
+          </div>
         </div>
 
         <form onSubmit={handleSubmit} className="relative w-full md:w-96">
@@ -51,7 +68,7 @@ const Navbar: React.FC<NavbarProps> = ({ onSearch, onNavigate, onStatusClick, ac
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             placeholder="ابحث عن فيلم، مسلسل، أنمي..."
-            className="w-full bg-slate-800 border border-slate-700 text-white rounded-full py-2 px-12 focus:outline-none focus:ring-2 focus:ring-red-600 transition-all text-sm md:text-base"
+            className="w-full bg-slate-800 border border-slate-700 text-white rounded-full py-2.5 px-12 focus:outline-none focus:ring-2 focus:ring-red-600 transition-all text-sm md:text-base"
           />
           <button type="submit" className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 transition-colors">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -60,22 +77,22 @@ const Navbar: React.FC<NavbarProps> = ({ onSearch, onNavigate, onStatusClick, ac
           </button>
         </form>
 
-        <div className="flex items-center gap-4 md:gap-6 text-slate-300 font-semibold text-sm">
+        <div className="flex items-center gap-4 md:gap-6 text-slate-300 font-black text-[11px] uppercase tracking-widest">
           <button 
             onClick={() => onNavigate('home')} 
-            className={`${activeView === 'home' ? 'text-red-500' : 'hover:text-red-500'} transition-colors`}
+            className={`${activeView === 'home' ? 'text-red-500 bg-red-500/10 px-3 py-1 rounded-lg' : 'hover:text-red-500'} transition-all`}
           >
             الرئيسية
           </button>
           <button 
             onClick={() => onNavigate('watchlist')} 
-            className={`${activeView === 'watchlist' ? 'text-red-500' : 'hover:text-red-500'} transition-colors`}
+            className={`${activeView === 'watchlist' ? 'text-red-500 bg-red-500/10 px-3 py-1 rounded-lg' : 'hover:text-red-500'} transition-all`}
           >
-            المشاهدة لاحقاً
+            المفصلة
           </button>
           <button 
             onClick={() => onNavigate('history')} 
-            className={`${activeView === 'history' ? 'text-red-500' : 'hover:text-red-500'} transition-colors`}
+            className={`${activeView === 'history' ? 'text-red-500 bg-red-500/10 px-3 py-1 rounded-lg' : 'hover:text-red-500'} transition-all`}
           >
             السجل
           </button>

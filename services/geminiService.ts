@@ -1,56 +1,72 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 import { Movie, FilterLanguage, FilterType } from "../types";
+import { TRUSTED_ARABIC_SOURCES } from "../constants/sources";
 
 const API_KEY = process.env.API_KEY;
+const DAILY_LIMIT = 1500;
 
 export const checkApiStatus = (): boolean => {
   return !!API_KEY && API_KEY.length > 10;
 };
 
-// Add the missing getApiDiagnostics function to fix the import error in App.tsx
 export const getApiDiagnostics = () => {
   const hasKey = !!API_KEY;
-  const keyLength = API_KEY?.length || 0;
-  const isValidFormat = API_KEY?.startsWith("AIza");
+  if (!hasKey) return { message: "مفتاح API مفقود", details: "يرجى إضافة مفتاح Gemini في إعدادات المشروع." };
+  return { message: "المفتاح متصل", details: "نظام الوكلاء المتعددين (Multi-Agent) جاهز للعمل." };
+};
 
-  if (!hasKey) {
-    return { message: "مفتاح API مفقود", details: "لم يتم العثور على متغير البيئة API_KEY في إعدادات المشروع." };
-  }
-  if (!isValidFormat) {
-    return { message: "تنسيق المفتاح غير صحيح", details: "يجب أن يبدأ مفتاح Gemini بـ 'AIza'. يرجى التأكد من صحة المفتاح المستخدم." };
-  }
-  if (keyLength < 20) {
-    return { message: "المفتاح قصير جداً", details: "يبدو أن المفتاح غير مكتمل أو غير صحيح." };
-  }
-  return { message: "المفتاح يبدو سليماً من الناحية التقنية", details: "إذا استمرت المشكلة، يرجى التأكد من تفعيل Gemini API في Google AI Studio والتأكد من عدم تجاوز حصة الاستخدام." };
+export const getDailyUsage = () => {
+  const today = new Date().toDateString();
+  const storedData = localStorage.getItem('gemini_usage');
+  if (!storedData) return { count: 0, date: today };
+  const parsed = JSON.parse(storedData);
+  if (parsed.date !== today) return { count: 0, date: today };
+  return parsed;
+};
+
+const incrementUsage = () => {
+  const usage = getDailyUsage();
+  const newData = { count: usage.count + 1, date: usage.date };
+  localStorage.setItem('gemini_usage', JSON.stringify(newData));
+  return newData.count;
+};
+
+export const getRemainingRequests = () => {
+  const usage = getDailyUsage();
+  return Math.max(0, DAILY_LIMIT - usage.count);
 };
 
 const getAIInstance = () => {
   if (!checkApiStatus()) return null;
-  // Create a new instance right before use to ensure the latest API key is used
   return new GoogleGenAI({ apiKey: API_KEY! });
 };
 
 export const searchMovies = async (query: string, language: FilterLanguage, type: FilterType): Promise<Movie[]> => {
   const ai = getAIInstance();
   if (!ai) throw new Error("API_KEY_MISSING");
+  
+  incrementUsage();
 
   const model = "gemini-3-flash-preview";
   
-  // برومبت مكثف لاستخراج روابط المشاهدة النهائية فقط
-  const prompt = `
-    ACT AS: A Movie Link Scraper.
-    SEARCH: Find direct streaming pages for the movie: "${query}".
-    TARGET WEBSITES: (cimawbas.tv, mycima.io, akwam.net, egybest.run, faselhd.com, wecima.show, hi-cima.com).
-    CRITICAL RULES:
-    1. Extract the FULL URL of the page where the movie is played.
-    2. Look for patterns like /watch/, /video/, watch.php?vid=, /play/.
-    3. DO NOT return search result pages (e.g., google.com/search).
-    4. NO YouTube, NO trailers, NO news.
-    5. Language: ${language}.
+  const systemInstruction = `
+    You are the "Arabic Streaming Hunter". Your task is to find DIRECT watch/view pages for: "${query}".
     
-    OUTPUT: Return a JSON array of movies with metadata and an array of extracted "sources" (the direct links).
+    CRITICAL PROTOCOL:
+    1. MIRROR SEARCH: Arabic movie sites (MyCima, EgyBest, Akwam, iWaatch) constantly change their TLDs (e.g., .tv to .show to .cc). 
+    2. USE GOOGLE SEARCH: First find the current active mirror for the sites listed in our trusted list.
+    3. PATTERN MATCHING: Prioritize URLs containing "/watch/", "/view/", "/v/", or "/movie/".
+    4. EXCLUSION: Discard homepages, category pages, search results, or ad-landing pages.
+    5. TARGET SOURCES: Focus on iWaatch, WeCima, Akwam, FaselHD, and EgyBest.
+    
+    OUTPUT: A strict JSON array. For each 'sources' link, ensure the URL path actually contains the movie name (e.g., /view/The_Beekeeper).
+  `;
+
+  const prompt = `
+    Find working deep links for "${query}" on active mirrors of trusted Arabic sites.
+    Filter: Language ${language}, Type ${type}.
+    Pay special attention to finding links on iWaatch.com and WeCima mirrors.
   `;
 
   try {
@@ -58,7 +74,8 @@ export const searchMovies = async (query: string, language: FilterLanguage, type
       model: model,
       contents: prompt,
       config: {
-        tools: [{ googleSearch: {} }], // استخدام جوجل للبحث الفعلي
+        systemInstruction: systemInstruction,
+        tools: [{ googleSearch: {} }],
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.ARRAY,
@@ -75,54 +92,78 @@ export const searchMovies = async (query: string, language: FilterLanguage, type
               languageStatus: { type: Type.STRING },
               genre: { type: Type.ARRAY, items: { type: Type.STRING } },
               description: { type: Type.STRING },
-              quality: { type: Type.STRING }
+              quality: { type: Type.STRING },
+              sources: { type: Type.ARRAY, items: { type: Type.STRING } }
             },
-            required: ["id", "title", "originalTitle", "year", "rating", "poster", "type", "languageStatus", "genre", "description", "quality"]
+            required: ["id", "title", "originalTitle", "year", "rating", "poster", "type", "languageStatus", "genre", "description", "quality", "sources"]
           }
         }
       }
     });
 
-    // اقتناص الروابط من Grounding Metadata التي يوفرها Gemini Search
     const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-    const rawUrls = groundingChunks
+    const discoveredUrls = groundingChunks
       .filter((chunk: any) => chunk.web && chunk.web.uri)
       .map((chunk: any) => chunk.web.uri);
 
-    const movies = JSON.parse(response.text || "[]");
+    let results = JSON.parse(response.text || "[]");
 
-    return movies.map((movie: any) => {
-      // فلترة وتدقيق الروابط لتكون خاصة بالفيلم المختار تحديداً
-      const movieSlug = movie.originalTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
-      const relevantLinks = rawUrls.filter((url: string) => {
+    return results.map((movie: any) => {
+      let verifiedSources: string[] = [];
+      const allCandidateUrls = Array.from(new Set([...(movie.sources || []), ...discoveredUrls]));
+
+      allCandidateUrls.forEach((url: string) => {
         const u = url.toLowerCase();
-        // التحقق من أن الرابط يحتوي على كلمة من العنوان وأنها ليست صفحة بحث عامة
-        const isRelevant = u.includes(movieSlug) || movie.originalTitle.toLowerCase().split(' ').some(word => word.length > 3 && u.includes(word));
-        const isStream = u.includes('watch') || u.includes('video') || u.includes('.php') || u.includes('play') || u.includes('movie');
-        const isNotSocial = !u.includes('youtube') && !u.includes('facebook') && !u.includes('google');
         
-        return isRelevant && isStream && isNotSocial;
+        // التحقق من المصدر أو المرايا النشطة
+        const trustedSource = TRUSTED_ARABIC_SOURCES.find(source => 
+          source.aliases.some(alias => u.includes(alias.split('.')[0])) || 
+          u.includes(source.domain.split('.')[0])
+        );
+
+        if (trustedSource || u.includes('iwaatch') || u.includes('wecima') || u.includes('mycima')) {
+          // تنظيف اسم الفيلم للبحث عنه في الرابط
+          const cleanTitle = movie.originalTitle.toLowerCase().replace(/[^a-z0-9]/g, '_');
+          const titleSlug = cleanTitle.split('_').filter(w => w.length > 2);
+          
+          const hasMovieReference = titleSlug.some(w => u.includes(w)) || 
+                                   movie.title.split(' ').some(w => w.length > 2 && u.includes(w));
+          
+          const isNotNavigational = !u.includes('/search') && !u.includes('/category/') && !u.includes('/tag/') && u.length > 25;
+          const isDeepLink = u.includes('/view/') || u.includes('/watch/') || u.includes('/movie/') || u.includes('/series/');
+
+          if (hasMovieReference && isNotNavigational && isDeepLink) {
+            verifiedSources.push(url);
+          }
+        }
       });
 
-      // إزالة الروابط المكررة وترتيبها
-      const uniqueLinks = Array.from(new Set(relevantLinks));
+      // ترتيب الروابط حسب الأولوية وتوافق الأنماط
+      verifiedSources.sort((a, b) => {
+        const aLow = a.toLowerCase();
+        const bLow = b.toLowerCase();
+        
+        // إعطاء أولوية قصوى لموقع iwaatch و wecima لأنها الأكثر نشاطاً حالياً
+        const aBoost = (aLow.includes('iwaatch') || aLow.includes('wecima')) ? 2 : 0;
+        const bBoost = (bLow.includes('iwaatch') || bLow.includes('wecima')) ? 2 : 0;
+        
+        return bBoost - aBoost;
+      });
 
       return {
         ...movie,
-        sources: uniqueLinks.length > 0 ? uniqueLinks : [
-          `https://www.google.com/search?q=مشاهدة+${encodeURIComponent(movie.title)}+مترجم+كامل+اون+لاين`
-        ]
+        sources: Array.from(new Set(verifiedSources)).slice(0, 12)
       };
     });
   } catch (error) {
-    console.error("Link Extraction Error:", error);
+    console.error("Agentic System Error:", error);
     throw error;
   }
 };
 
 export const getFeaturedMovies = async (): Promise<Movie[]> => {
   try {
-    return await searchMovies("أفلام 2024 مترجمة", FilterLanguage.ALL, FilterType.ALL);
+    return await searchMovies("أحدث الأفلام المترجمة 2024 2025", FilterLanguage.ALL, FilterType.ALL);
   } catch {
     return [];
   }
